@@ -1,32 +1,74 @@
-# Mosquito Hunter 🦟
+# Mosquito Hunter ��
 
-A web application where users can submit mosquito images and earn coins. Built with React and Flask.
+A web application that helps identify and track mosquito species through image submissions. Built with Flask backend and React frontend.
 
 ## Features
 
-- User authentication with hunter names
-- Image submission and verification
-- Coin earning system
-- Leaderboard
-- Transaction history
-- Real-time updates
+- 🖼️ Image upload and verification
+- 🔍 Mosquito species identification
+- 📊 Leaderboard system
+- 👤 User profiles and authentication
+- 📱 Responsive design
+- 🔒 Secure file handling
+- 📝 Detailed submission history
 
 ## Tech Stack
 
-- Frontend: React.js, TailwindCSS
-- Backend: Python Flask
-- Database: SQLite
-- Image Processing: OpenCV, TensorFlow
+### Backend
+- Python/Flask
+- SQLite Database
+- TensorFlow for image processing
+- JWT Authentication
+
+### Frontend
+- React.js
+- Axios for API calls
+- Modern UI with CSS-in-JS
+- Responsive design
+
+## Project Structure
+
+```
+mosquito-hunter/
+├── backend/
+│   ├── app/
+│   │   ├── routes/
+│   │   │   ├── auth.py
+│   │   │   ├── image_routes.py
+│   │   │   └── main_routes.py
+│   │   ├── services/
+│   │   │   ├── storage.py
+│   │   │   └── verification.py
+│   │   ├── database.py
+│   │   └── __init__.py
+│   ├── config.py
+│   ├── requirements.txt
+│   └── run.py
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Profile.js
+│   │   │   └── Submission.js
+│   │   ├── services/
+│   │   │   └── api.js
+│   │   └── App.js
+│   └── package.json
+└── README.md
+```
 
 ## Setup Instructions
 
 ### Backend Setup
 
-1. Create a virtual environment:
+1. Create and activate virtual environment:
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+# On Windows
+.venv\Scripts\activate
+# On Unix or MacOS
+source .venv/bin/activate
 ```
 
 2. Install dependencies:
@@ -34,10 +76,17 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Run the server:
+3. Create `.env` file:
+```bash
+cp .env.example .env
+```
+
+4. Start the backend server:
 ```bash
 python run.py
 ```
+
+The backend server will run at `http://localhost:5000`
 
 ### Frontend Setup
 
@@ -52,25 +101,19 @@ npm install
 npm start
 ```
 
-## Project Structure
+The frontend will run at `http://localhost:3002`
 
-```
-mosquito-hunter/
-├── backend/
-│   ├── app/
-│   │   ├── models/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   └── uploads/
-│   ├── requirements.txt
-│   └── run.py
-└── frontend/
-    ├── public/
-    ├── src/
-    │   ├── components/
-    │   └── App.js
-    └── package.json
-```
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - User login
+- `GET /api/auth/profile` - Get user profile
+
+### Image Submission
+- `POST /api/submit` - Submit mosquito image
+- `GET /api/submissions` - Get user submissions
+- `GET /api/leaderboard` - Get leaderboard data
 
 ## Contributing
 
@@ -82,4 +125,10 @@ mosquito-hunter/
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- TensorFlow for image processing capabilities
+- Flask and React communities for excellent documentation
+- Contributors and maintainers of all dependencies 
