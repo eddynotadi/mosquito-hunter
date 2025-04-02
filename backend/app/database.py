@@ -18,6 +18,7 @@ db = client.mosquito_coin
 users = db.users
 images = db.images
 transactions = db.transactions
+submissions = db.submissions
 
 def init_db():
     """Initialize database with indexes and default data."""
@@ -26,6 +27,8 @@ def init_db():
     images.create_index('user_id')
     transactions.create_index('user_id')
     transactions.create_index('timestamp')
+    submissions.create_index('user_id')
+    submissions.create_index('submitted_at')
     
     # Create default admin user if not exists
     if not users.find_one({'username': 'admin'}):
@@ -37,6 +40,62 @@ def init_db():
             'kills': 0,
             'created_at': datetime.utcnow()
         })
+
+def add_submission(user_id, image_path, verified=False):
+    """Add a new image submission."""
+    submission = {
+        'user_id': user_id,
+        'image_path': image_path,
+        'verified': verified,
+        'submitted_at': datetime.utcnow()
+    }
+    submissions.insert_one(submission)
+    return submission
+
+def get_user_submissions(user_id):
+    """Get all submissions for a user."""
+    return list(submissions.find(
+        {'user_id': user_id}
+    ).sort('submitted_at', -1))
+
+def get_leaderboard():
+    """Get top users by verified submissions."""
+    pipeline = [
+        {
+            '$match': {'verified': True}
+        },
+        {
+            '$group': {
+                '_id': '$user_id',
+                'submission_count': {'$sum': 1}
+            }
+        },
+        {
+            '$lookup': {
+                'from': 'users',
+                'localField': '_id',
+                'foreignField': '_id',
+                'as': 'user'
+            }
+        },
+        {
+            '$unwind': '$user'
+        },
+        {
+            '$project': {
+                'username': '$user.username',
+                'submission_count': 1,
+                '_id': 0
+            }
+        },
+        {
+            '$sort': {'submission_count': -1}
+        },
+        {
+            '$limit': 10
+        }
+    ]
+    return list(submissions.aggregate(pipeline))
 
 def get_user_by_username(username):
     """Get user by username."""
@@ -78,13 +137,6 @@ def get_user_transactions(user_id, limit=10):
     return list(transactions.find(
         {'user_id': user_id}
     ).sort('timestamp', -1).limit(limit))
-
-def get_leaderboard(limit=10):
-    """Get top users by coins."""
-    return list(users.find(
-        {},
-        {'username': 1, 'coins': 1, 'kills': 1, '_id': 0}
-    ).sort('coins', -1).limit(limit))
 
 def save_image(user_id, image_url, verification_status='pending'):
     """Save image information."""

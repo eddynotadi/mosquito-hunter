@@ -1,169 +1,211 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 
 const Submission = () => {
+  const [file, setFile] = useState(null);
+  const [username, setUsername] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [coinsEarned, setCoinsEarned] = useState(0);
-  const [username, setUsername] = useState('user1'); // Default username, you can modify this
-  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      if (selectedFile.size > 5 * 1024 * 1024) { // 5MB limit
+        setError('File size too large. Please select an image under 5MB.');
+        e.target.value = '';
+        return;
+      }
+      if (!selectedFile.type.startsWith('image/')) {
+        setError('Please select a valid image file.');
+        e.target.value = '';
+        return;
+      }
+      setFile(selectedFile);
+      setError('');
+    }
+  };
+
+  const handleUsernameChange = (e) => {
+    setUsername(e.target.value);
+    setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
     setLoading(true);
+    setError('');
+    setMessage('');
+
+    if (!file) {
+      setError('Please select an image file');
+      setLoading(false);
+      return;
+    }
+
+    if (!username) {
+      setError('Please enter a username');
+      setLoading(false);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('username', username);
 
     try {
-      if (!selectedFile) {
-        throw new Error('Please select an image first');
-      }
-
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('username', username);
-
-      const response = await axios.post('http://localhost:5000/submit_image', formData, {
+      const response = await axios.post('http://localhost:5000/api/submit', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+          'Content-Type': 'multipart/form-data',
+        },
       });
 
-      if (response.data.success) {
-        setSuccess(true);
-        setCoinsEarned(response.data.coins);
-        setSelectedFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+      if (response.data && response.data.success) {
+        setMessage(response.data.message || 'Image submitted successfully');
+        setFile(null);
+        setUsername('');
+        // Reset file input
+        const fileInput = document.getElementById('image');
+        if (fileInput) {
+          fileInput.value = '';
         }
-        // You can implement fetchUserProfile function if needed
-        // await fetchUserProfile();
       } else {
-        setError(response.data.message || 'Failed to verify image');
+        setError(response.data?.message || response.data?.error || 'Failed to submit image');
       }
     } catch (err) {
+      console.error('Submission error:', err);
       if (err.response) {
-        switch (err.response.data.error) {
-          case 'INVALID_FILE':
-            setError('Please select a valid image file');
-            break;
-          case 'FILE_TOO_LARGE':
-            setError('Image file is too large');
-            break;
-          case 'INVALID_TYPE':
-            setError('Invalid file type. Please upload an image');
-            break;
-          case 'PROCESSING_ERROR':
-            setError('Error processing the image');
-            break;
-          case 'VERIFICATION_ERROR':
-            setError('Failed to verify the image');
-            break;
-          case 'DUPLICATE_IMAGE':
-            setError('This image has already been submitted');
-            break;
-          case 'INVALID_IMAGE':
-            setError('Not a valid mosquito image');
-            break;
-          default:
-            setError('An error occurred while submitting the image');
-        }
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        setError(err.response.data?.message || err.response.data?.error || 'Server error occurred');
+      } else if (err.request) {
+        // The request was made but no response was received
+        setError('No response from server. Please check your connection.');
       } else {
-        setError('Failed to connect to the server');
+        // Something happened in setting up the request that triggered an Error
+        setError('Error setting up the request. Please try again.');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('File size too large. Please select an image under 5MB.');
-        e.target.value = '';
-        return;
-      }
-      if (!file.type.startsWith('image/')) {
-        setError('Please select an image file.');
-        e.target.value = '';
-        return;
-      }
-      setSelectedFile(file);
-      setError(null);
-      setSuccess(false);
-      
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-md mx-auto bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-2xl font-bold mb-4 text-center">Submit Mosquito Image</h2>
+    <div className="submission-container">
+      <h2>Submit Mosquito Image</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="username">Username:</label>
+          <input
+            type="text"
+            id="username"
+            value={username}
+            onChange={handleUsernameChange}
+            required
+            placeholder="Enter your username"
+          />
+        </div>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Select Image
-            </label>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*"
-              className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-full file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100"
-            />
-          </div>
+        <div className="form-group">
+          <label htmlFor="image">Image:</label>
+          <input
+            type="file"
+            id="image"
+            accept="image/*"
+            onChange={handleFileChange}
+            required
+            disabled={loading}
+          />
+          <small className="file-hint">Maximum file size: 5MB. Supported formats: PNG, JPG, JPEG</small>
+        </div>
 
-          {preview && (
-            <div className="mt-4">
-              <img
-                src={preview}
-                alt="Preview"
-                className="max-w-full h-auto rounded-lg shadow"
-              />
-            </div>
-          )}
+        {error && <div className="error-message">{error}</div>}
+        {message && <div className="success-message">{message}</div>}
 
-          {error && (
-            <div className="bg-red-50 border-l-4 border-red-400 p-4">
-              <p className="text-red-700">{error}</p>
-            </div>
-          )}
+        <button type="submit" disabled={loading}>
+          {loading ? 'Submitting...' : 'Submit Image'}
+        </button>
+      </form>
 
-          {success && (
-            <div className="bg-green-50 border-l-4 border-green-400 p-4">
-              <p className="text-green-700">
-                Success! You earned {coinsEarned} coins.
-              </p>
-            </div>
-          )}
+      <style jsx>{`
+        .submission-container {
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+        }
 
-          <button
-            type="submit"
-            disabled={loading || !selectedFile}
-            className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
-              ${loading || !selectedFile 
-                ? 'bg-gray-400 cursor-not-allowed' 
-                : 'bg-blue-600 hover:bg-blue-700'}`}
-          >
-            {loading ? 'Submitting...' : 'Submit Image'}
-          </button>
-        </form>
-      </div>
+        .form-group {
+          margin-bottom: 15px;
+        }
+
+        label {
+          display: block;
+          margin-bottom: 5px;
+          font-weight: bold;
+        }
+
+        input[type="text"] {
+          width: 100%;
+          padding: 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-size: 16px;
+        }
+
+        input[type="file"] {
+          width: 100%;
+          padding: 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-size: 16px;
+        }
+
+        .file-hint {
+          display: block;
+          margin-top: 5px;
+          color: #666;
+          font-size: 14px;
+        }
+
+        button {
+          background-color: #4CAF50;
+          color: white;
+          padding: 12px 24px;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 16px;
+          width: 100%;
+          transition: background-color 0.3s;
+        }
+
+        button:hover:not(:disabled) {
+          background-color: #45a049;
+        }
+
+        button:disabled {
+          background-color: #cccccc;
+          cursor: not-allowed;
+        }
+
+        .error-message {
+          color: #ff0000;
+          margin: 10px 0;
+          padding: 10px;
+          background-color: #ffebee;
+          border-radius: 4px;
+          border: 1px solid #ffcdd2;
+        }
+
+        .success-message {
+          color: #4CAF50;
+          margin: 10px 0;
+          padding: 10px;
+          background-color: #e8f5e9;
+          border-radius: 4px;
+          border: 1px solid #c8e6c9;
+        }
+      `}</style>
     </div>
   );
 };

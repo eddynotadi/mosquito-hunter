@@ -22,26 +22,51 @@ export const getUserProfile = async () => {
     }
 };
 
-export const submitImage = async (imageFile) => {
-    try {
-        const formData = new FormData();
-        formData.append('image', imageFile);
-        formData.append('username', localStorage.getItem('username'));
+export const submitImage = async (file, userId) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('user_id', userId);
 
+    try {
         const response = await fetch(`${API_URL}/submit`, {
             method: 'POST',
             body: formData
         });
 
-        const data = await response.json();
-        
         if (!response.ok) {
-            throw new Error(data.message || 'Failed to submit image');
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to submit image');
         }
 
-        return data;
+        return await response.json();
     } catch (error) {
         console.error('Error submitting image:', error);
+        throw error;
+    }
+};
+
+export const getSubmissions = async (userId) => {
+    try {
+        const response = await fetch(`${API_URL}/submissions/${userId}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch submissions');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching submissions:', error);
+        throw error;
+    }
+};
+
+export const getLeaderboard = async () => {
+    try {
+        const response = await fetch(`${API_URL}/leaderboard`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch leaderboard');
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
         throw error;
     }
 }; 

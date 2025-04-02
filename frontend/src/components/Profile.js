@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUserProfile, submitImage } from '../services/api';
+import { getUserProfile, submitImage, getSubmissions } from '../services/api';
 
 const Profile = () => {
     const [userData, setUserData] = useState({
@@ -13,11 +13,19 @@ const Profile = () => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [preview, setPreview] = useState(null);
     const [uploadStatus, setUploadStatus] = useState('');
+    const [submissions, setSubmissions] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
+    const userId = localStorage.getItem('userId'); // Get user ID from localStorage
     const navigate = useNavigate();
 
     useEffect(() => {
         fetchUserData();
-    }, []);
+        if (userId) {
+            loadSubmissions();
+        }
+    }, [userId]);
 
     const fetchUserData = async () => {
         try {
@@ -27,6 +35,16 @@ const Profile = () => {
             }
         } catch (error) {
             console.error('Error fetching user data:', error);
+        }
+    };
+
+    const loadSubmissions = async () => {
+        try {
+            const response = await getSubmissions(userId);
+            setSubmissions(response.submissions);
+        } catch (error) {
+            console.error('Error loading submissions:', error);
+            setError('Failed to load submissions');
         }
     };
 
@@ -42,24 +60,49 @@ const Profile = () => {
         }
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const handleFileChange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            if (file.size > 5 * 1024 * 1024) {
+                setError('File size must be less than 5MB');
+                return;
+            }
+            if (!file.type.startsWith('image/')) {
+                setError('Please select an image file');
+                return;
+            }
+            setSelectedFile(file);
+            setError(null);
+        }
+    };
+
+    const handleSubmit = async (event) => {
+        event.preventDefault();
         if (!selectedFile) {
-            setUploadStatus('Please select an image first!');
+            setError('Please select an image file');
             return;
         }
 
+        setLoading(true);
+        setError(null);
+        setSuccess(null);
+
         try {
-            setUploadStatus('Uploading...');
-            const result = await submitImage(selectedFile);
-            if (result) {
-                setUploadStatus('Success! Image submitted successfully.');
+            const response = await submitImage(selectedFile, userId);
+            if (response.success) {
+                setSuccess(response.message);
                 setSelectedFile(null);
                 setPreview(null);
-                fetchUserData(); // Refresh user data
+                fetchUserData();
+                loadSubmissions();
+            } else {
+                setError(response.error || 'Failed to submit image');
             }
         } catch (error) {
             console.error('Submission error:', error);
+            setError(error.message || 'Failed to submit image');
+        } finally {
+            setLoading(false);
             setUploadStatus(`Error: ${error.message || 'Failed to submit image. Please try again.'}`);
         }
     };

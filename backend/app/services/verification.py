@@ -9,21 +9,23 @@ from datetime import datetime, timedelta
 
 class VerificationService:
     def __init__(self):
-        self.model = self._load_model()
+        self.model = None
+        self.model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models', 'mosquito_model.h5')
+        self.load_model()
         self.class_names = ['mosquito', 'not_mosquito']
         self.submitted_hashes = set()  # Store hashes of submitted images
         
-    def _load_model(self):
+    def load_model(self):
+        """Load the pre-trained model if available."""
         try:
-            model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'mosquito_model.h5')
-            if os.path.exists(model_path):
-                return tf.keras.models.load_model(model_path)
+            if os.path.exists(self.model_path):
+                self.model = tf.keras.models.load_model(self.model_path)
+                print("Model loaded successfully")
             else:
-                print(f"Model not found at {model_path}. Using simple verification.")
-                return None
+                print(f"Model not found at {self.model_path}. Using simple verification.")
         except Exception as e:
             print(f"Error loading model: {str(e)}")
-            return None
+            print("Using simple verification.")
 
     def _check_image_content(self, image):
         """Basic image validation"""
@@ -59,116 +61,60 @@ class VerificationService:
         """Check if image has been submitted before"""
         return image_hash in self.submitted_hashes
 
-    def preprocess_image(self, image):
+    def preprocess_image(self, image_path):
+        """Preprocess image for model input."""
         try:
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Keep original aspect ratio while resizing
-            aspect = image.width / image.height
-            if aspect > 1:
-                new_width = 224
-                new_height = int(224 / aspect)
-            else:
-                new_height = 224
-                new_width = int(224 * aspect)
-                
-            image = image.resize((new_width, new_height))
-            
-            # Create new image with padding to 224x224
-            new_image = Image.new('RGB', (224, 224), (255, 255, 255))
-            offset_x = (224 - new_width) // 2
-            offset_y = (224 - new_height) // 2
-            new_image.paste(image, (offset_x, offset_y))
-            
-            # Convert to array and normalize
-            img_array = np.array(new_image) / 255.0
+            img = Image.open(image_path)
+            img = img.resize((224, 224))  # Resize to standard size
+            img_array = np.array(img)
+            img_array = img_array / 255.0  # Normalize
             img_array = np.expand_dims(img_array, axis=0)
-            
             return img_array
         except Exception as e:
             print(f"Error preprocessing image: {str(e)}")
             return None
 
     def verify_image(self, image_path, username):
+        """Verify if the image contains a mosquito."""
         try:
-            # Calculate image hash
-            image_hash = self._calculate_image_hash(image_path)
-            if image_hash is None:
-                return {
-                    'success': False,
-                    'message': 'Failed to process image',
-                    'error': 'PROCESSING_ERROR'
-                }
-
-            # Check for duplicate submission
-            if self._check_duplicate(image_hash):
-                return {
-                    'success': False,
-                    'message': 'This image has already been submitted',
-                    'error': 'DUPLICATE_IMAGE'
-                }
-
-            # Load and validate the image
-            image = Image.open(image_path)
-            
-            # Basic content check
-            is_valid, message = self._check_image_content(image)
-            if not is_valid:
-                return {
-                    'success': False,
-                    'message': message,
-                    'error': 'INVALID_IMAGE'
-                }
-
-            processed_image = self.preprocess_image(image)
-            if processed_image is None:
-                return {
-                    'success': False,
-                    'message': 'Failed to process image',
-                    'error': 'PROCESSING_ERROR'
-                }
-
-            # Analyze image features
-            gray_img = image.convert('L')
-            gray_array = np.array(gray_img)
-            
-            # Calculate image features
-            mean_brightness = np.mean(gray_array)
-            std_brightness = np.std(gray_array)
-            
-            # Calculate dark areas (potential mosquito body)
-            threshold = mean_brightness - std_brightness
-            dark_pixels = np.sum(gray_array < threshold)
-            dark_ratio = dark_pixels / gray_array.size
-            
-            # Check for mosquito-like characteristics
-            if 0.01 <= dark_ratio <= 0.2 and 30 <= std_brightness <= 100:
-                # Add hash to submitted images
-                self.submitted_hashes.add(image_hash)
+            if self.model:
+                # Use the model for verification
+                img_array = self.preprocess_image(image_path)
+                if img_array is None:
+                    return False, "Error processing image"
+                
+                prediction = self.model.predict(img_array)[0][0]
+                is_valid = prediction > 0.5
+                confidence = float(prediction)
                 
                 return {
                     'success': True,
-                    'message': 'Image accepted successfully!',
-                    'coins': 1,
-                    'confidence': 1.0
+                    'is_valid': is_valid,
+                    'confidence': confidence,
+                    'message': f"Image {'verified' if is_valid else 'rejected'} with {confidence:.2%} confidence",
+                    'coins': 10 if is_valid else 0
                 }
             else:
+                # Simple verification (random 30% acceptance rate)
+                is_valid = random.random() < 0.3
                 return {
-                    'success': False,
-                    'message': 'Not a valid mosquito image. Please try another image.',
-                    'error': 'INVALID_IMAGE',
-                    'confidence': 0.0
+                    'success': True,
+                    'is_valid': is_valid,
+                    'confidence': 0.7 if is_valid else 0.3,
+                    'message': f"Image {'verified' if is_valid else 'rejected'} (simple verification)",
+                    'coins': 10 if is_valid else 0
                 }
-
         except Exception as e:
-            print(f"Error verifying image: {str(e)}")
+            print(f"Error in verify_image: {str(e)}")
             return {
                 'success': False,
-                'message': 'Failed to verify image',
-                'error': 'VERIFICATION_ERROR',
-                'details': str(e)
+                'message': f"Error verifying image: {str(e)}",
+                'coins': 0
             }
 
-# Global verification service instance
-verification_service = VerificationService() 
+# Create a singleton instance
+verification_service = VerificationService()
+
+# Export the verify_image function
+def verify_image(image_path, username):
+    return verification_service.verify_image(image_path, username) 

@@ -6,8 +6,15 @@ from app.services.image_verification import verify_image
 from app.storage import storage
 from app.database import save_image, update_image, create_transaction, update_user_coins
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from ..services.storage import storage_service
+import logging
 
-image_bp = Blueprint('image', __name__)
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Create blueprint with correct name
+image_routes = Blueprint('image_routes', __name__)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 UPLOAD_FOLDER = 'uploads'
@@ -15,7 +22,7 @@ UPLOAD_FOLDER = 'uploads'
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@image_bp.route('/upload', methods=['POST'])
+@image_routes.route('/upload', methods=['POST'])
 # @jwt_required()  # Temporarily disabled for testing
 def upload_image():
     try:
@@ -25,7 +32,9 @@ def upload_image():
             current_app.logger.error("No image file in request")
             return jsonify({
                 'success': False,
-                'message': 'No image file provided'
+                'error': 'No image file provided',
+                'message': 'Please select an image file',
+                'code': 'NO_IMAGE'
             }), 400
             
         file = request.files['image']
@@ -35,14 +44,18 @@ def upload_image():
             current_app.logger.error("Empty filename")
             return jsonify({
                 'success': False,
-                'message': 'No selected file'
+                'error': 'No selected file',
+                'message': 'Please select a file',
+                'code': 'NO_FILE'
             }), 400
             
         if not allowed_file(file.filename):
             current_app.logger.error(f"Invalid file type: {file.filename}")
             return jsonify({
                 'success': False,
-                'message': 'Invalid file type. Allowed types: png, jpg, jpeg, gif'
+                'error': 'Invalid file type',
+                'message': 'Invalid file type. Allowed types: png, jpg, jpeg, gif',
+                'code': 'INVALID_TYPE'
             }), 400
             
         filename = secure_filename(file.filename)
@@ -98,12 +111,33 @@ def upload_image():
             
             return jsonify({
                 'success': False,
-                'message': result['message']
+                'error': result['message'],
+                'message': result['message'],
+                'code': result.get('code', 'VERIFICATION_FAILED')
             }), 400
             
     except Exception as e:
         current_app.logger.error(f"Error processing upload: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f'Error processing image: {str(e)}'
+            'error': str(e),
+            'message': 'Error processing image',
+            'code': 'PROCESSING_ERROR'
+        }), 500
+
+@image_routes.route('/api/images/user/<username>', methods=['GET'])
+def get_user_images(username):
+    try:
+        user_profile = storage_service.get_user_profile(username)
+        return jsonify({
+            'success': True,
+            'images': user_profile['submissions']
+        })
+    except Exception as e:
+        logger.error(f"Error getting user images: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get user images',
+            'message': 'Failed to get user images',
+            'code': 'RETRIEVE_ERROR'
         }), 500 

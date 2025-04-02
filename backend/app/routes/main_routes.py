@@ -1,129 +1,167 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 import os
-from ..services.storage import storage
-from ..services.verification import verification_service
+from ..services.verification import verify_image
+from ..services.storage import storage_service
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 main = Blueprint('main', __name__)
-
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-# Create uploads directory if it doesn't exist
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @main.route('/api/submit', methods=['POST'])
 def submit_image():
     try:
-        print("Received image submission request")  # Debug log
+        logger.debug("Received image submission request")
         
         if 'image' not in request.files:
-            print("No image file in request")  # Debug log
+            logger.error("No image file in request")
             return jsonify({
                 'success': False,
-                'message': 'No image file provided. Please select an image to upload.',
-                'error': 'MISSING_FILE'
+                'error': 'No image file provided',
+                'message': 'Please select an image file',
+                'code': 'NO_IMAGE'
             }), 400
-        
+            
         file = request.files['image']
         if file.filename == '':
+            logger.error("No selected file")
             return jsonify({
                 'success': False,
-                'message': 'No file selected. Please choose an image file.',
-                'error': 'NO_FILE_SELECTED'
+                'error': 'No selected file',
+                'message': 'Please select a file',
+                'code': 'NO_FILE'
             }), 400
-        
-        if not allowed_file(file.filename):
+            
+        if not storage_service.allowed_file(file.filename):
+            logger.error(f"Invalid file type: {file.filename}")
             return jsonify({
                 'success': False,
-                'message': f'File type not allowed. Allowed types are: {", ".join(ALLOWED_EXTENSIONS)}',
-                'error': 'INVALID_FILE_TYPE'
+                'error': 'Invalid file type',
+                'message': f'Invalid file type. Allowed types are: {", ".join(storage_service.allowed_extensions)}',
+                'code': 'INVALID_TYPE'
             }), 400
-        
-        # Check file size (max 5MB)
-        if len(file.read()) > 5 * 1024 * 1024:
-            file.seek(0)  # Reset file pointer
+            
+        # Get username from request
+        username = request.form.get('username')
+        if not username:
+            logger.error("No username provided")
             return jsonify({
                 'success': False,
-                'message': 'File too large. Maximum size is 5MB.',
-                'error': 'FILE_TOO_LARGE'
+                'error': 'Username is required',
+                'message': 'Please provide a username',
+                'code': 'NO_USERNAME'
             }), 400
-        
-        file.seek(0)  # Reset file pointer
-        
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        
+            
+        # Save the image
         try:
-            file.save(filepath)
-            print(f"File saved to {filepath}")  # Debug log
+            filepath = storage_service.save_image(file, file.filename)
+            logger.info(f"Image saved successfully: {filepath}")
         except Exception as e:
+            logger.error(f"Error saving image: {str(e)}")
             return jsonify({
                 'success': False,
-                'message': 'Failed to save the image. Please try again.',
-                'error': 'SAVE_ERROR',
-                'details': str(e)
+                'error': str(e),
+                'message': 'Failed to save image',
+                'code': 'SAVE_ERROR'
             }), 500
-        
-        # Verify the image using the verification service
-        username = request.form.get('username', 'Anonymous')
-        verification_result = verification_service.verify_image(filepath, username)
-        
+            
+        # Verify the image
+        try:
+            verification_result = verify_image(filepath, username)
+            logger.info(f"Image verification result: {verification_result}")
+        except Exception as e:
+            logger.error(f"Error verifying image: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': 'Error verifying image',
+                'message': 'Failed to verify image',
+                'code': 'VERIFICATION_ERROR'
+            }), 500
+            
         if not verification_result['success']:
             # Delete the file if verification failed
             try:
                 os.remove(filepath)
-            except:
-                pass
-            return jsonify(verification_result), 400
-        
-        # Store the submission if verification was successful
-        try:
-            submission = storage.add_submission(username, filepath, verification_result['coins'])
-        except Exception as e:
+                logger.info(f"Deleted unverified image: {filepath}")
+            except Exception as e:
+                logger.error(f"Error deleting unverified image: {str(e)}")
+                
             return jsonify({
                 'success': False,
-                'message': 'Failed to record your submission. Please try again.',
-                'error': 'SUBMISSION_ERROR',
-                'details': str(e)
-            }), 500
+                'error': verification_result['message'],
+                'message': verification_result['message'],
+                'code': verification_result['code']
+            }), 400
+            
+        # Add submission to storage
+        submission = storage_service.add_submission(
+            username=username,
+            image_path=filepath,
+            coins=verification_result['coins']
+        )
         
         return jsonify({
             'success': True,
-            'message': verification_result['message'],
-            'submission': submission,
-            'coins_earned': verification_result['coins'],
-            'confidence': verification_result['confidence']
-        }), 200
+            'message': 'Image submitted successfully',
+            'submission': submission
+        })
         
     except Exception as e:
-        print(f"Error in submit_image: {str(e)}")  # Debug log
+        logger.error(f"Unexpected error in submit_image: {str(e)}")
         return jsonify({
             'success': False,
-            'message': 'An unexpected error occurred. Please try again.',
-            'error': 'UNEXPECTED_ERROR',
-            'details': str(e)
+            'error': str(e),
+            'message': 'An unexpected error occurred',
+            'code': 'UNKNOWN_ERROR'
         }), 500
 
-@main.route('/api/user/profile', methods=['GET'])
-def get_user_profile():
+@main.route('/api/submissions', methods=['GET'])
+def get_submissions():
     try:
-        username = request.headers.get('X-Username', 'Anonymous')
-        profile = storage.get_user_profile(username)
-        return jsonify(profile), 200
+        username = request.args.get('username')
+        if not username:
+            logger.error("No username provided for submissions request")
+            return jsonify({
+                'success': False,
+                'error': 'Username is required',
+                'code': 'NO_USERNAME'
+            }), 400
+            
+        user_profile = storage_service.get_user_profile(username)
+        logger.info(f"Retrieved submissions for user: {username}")
+        
+        return jsonify({
+            'success': True,
+            'submissions': user_profile['submissions']
+        })
+        
     except Exception as e:
-        return jsonify({'message': str(e)}), 500
+        logger.error(f"Error getting submissions: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Error retrieving submissions',
+            'code': 'RETRIEVE_ERROR'
+        }), 500
 
 @main.route('/api/leaderboard', methods=['GET'])
-def get_leaderboard():
+def leaderboard():
     try:
-        limit = request.args.get('limit', default=10, type=int)
-        leaderboard = storage.get_leaderboard(limit)
-        return jsonify(leaderboard), 200
+        limit = int(request.args.get('limit', 10))
+        leaderboard_data = storage_service.get_leaderboard(limit)
+        logger.info(f"Retrieved leaderboard with limit: {limit}")
+        
+        return jsonify({
+            'success': True,
+            'leaderboard': leaderboard_data
+        })
+        
     except Exception as e:
-        print(f"Error in get_leaderboard: {str(e)}")  # Debug log
-        return jsonify({'message': str(e)}), 500 
+        logger.error(f"Error getting leaderboard: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Error retrieving leaderboard',
+            'code': 'LEADERBOARD_ERROR'
+        }), 500 
